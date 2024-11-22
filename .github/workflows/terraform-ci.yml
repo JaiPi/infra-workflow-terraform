@@ -1,0 +1,104 @@
+name: Reusable Terraform CI
+
+on:
+  workflow_call:
+    inputs:
+      gh-token:
+        description: 'GitHub token for accessing repositories'
+        required: false
+        type: string
+        default: 'notoken'
+      role-to-assume:
+        description: 'AWS Role to assume'
+        required: true
+        type: string
+      path:
+        description: 'Path to the Terraform folder to run on'
+        required: false
+        type: string
+        default: '.'
+      backend-config-file:
+        description: 'Path to the Terraform backend file'
+        required: false
+        type: string
+      workspace:
+        description: 'Terraform workspace to use'
+        required: false
+        type: string
+        default: 'default'
+      vars-file:
+        description: 'Path to the Terraform vars file'
+        required: true
+        type: string
+      terraform-version:
+        description: 'Terraform version to use'
+        required: false
+        type: string
+        default: 'latest'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  terraform-ci:
+    name: Terraform CI for ${{ inputs.workspace }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Setup AWS CLI
+        uses: CelfocusProduct-VTV/setup-aws-cli@v1
+
+      - name: Set up GitHub Token
+        if: ${{ inputs.gh-token != 'notoken' }}
+        shell: bash
+        run: |
+          git config --global url."https://oauth2:${{ inputs.gh-token }}@github.com".insteadOf "https://github.com"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Configure Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ inputs.terraform-version }}
+
+      - name: Authenticate with AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: eu-west-1
+          role-to-assume: ${{ inputs.role-to-assume }}
+
+      - name: Terraform FMT Check
+        run: terraform fmt -recursive -diff -check
+        working-directory: ${{ inputs.path }}
+        shell: bash
+
+      - name: Terraform Init (default)
+        if: ${{ inputs.backend-config-file == 'default' }}
+        run: terraform init
+        working-directory: ${{ inputs.path }}
+        shell: bash
+
+      - name: Terraform Init with Backend Config
+        if: ${{ inputs.backend-config-file != 'default' }}
+        run: terraform init --backend-config=${{ inputs.backend-config-file }}
+        working-directory: ${{ inputs.path }}
+        shell: bash
+
+      - name: Terraform Workspace Select
+        run: terraform workspace select -or-create ${{ inputs.workspace }}
+        working-directory: ${{ inputs.path }}
+        shell: bash
+
+      - name: Terraform Validate
+        run: terraform validate -no-color
+        working-directory: ${{ inputs.path }}
+        shell: bash
+
+      - name: Terraform Plan
+        run: terraform plan -var-file=${{ inputs.vars-file }}
+        working-directory: ${{ inputs.path }}
+        shell: bash
