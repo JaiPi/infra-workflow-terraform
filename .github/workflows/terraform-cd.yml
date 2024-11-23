@@ -171,6 +171,9 @@ jobs:
       - name: Initialize Terraform
         run: terraform init --backend-config=${{ inputs.backend_config_file }}
 
+      - name: Select Terraform workspace
+        run: terraform workspace select -or-create ${{ inputs.terraform_workspace }}
+
       - name: Show Terraform plan
         run: terraform show tfplan
 
